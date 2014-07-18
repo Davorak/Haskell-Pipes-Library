@@ -16,7 +16,6 @@
     You do not need to worry about this if you do not import this module, since
     the other modules in this library do not export the constructors or export
     any functions which can violate the monad transformer laws.
--}
 
 {-# LANGUAGE
     FlexibleInstances
@@ -25,16 +24,11 @@
   , UndecidableInstances
   , Trustworthy
   #-}
+-}
 
-module Pipes.Internal (
-    -- * Internal
-      Proxy(..)
-    , unsafeHoist
-    , observe
-    , X
-    , closed
-    ) where
+module Pipes.Internal
 
+{-
 import Control.Applicative (
     Applicative(pure, (<*>), (*>)), Alternative(empty, (<|>)) )
 import Control.Monad (MonadPlus(..))
@@ -46,6 +40,11 @@ import Control.Monad.Reader (MonadReader(..))
 import Control.Monad.State (MonadState(..))
 import Control.Monad.Writer (MonadWriter(..))
 import Data.Monoid (mempty,mappend)
+-}
+
+import Control.Monad.State
+import Control.Monad.Writer
+import Control.Monad.Reader
 
 {-| A 'Proxy' is a monad transformer that receives and sends information on both
     an upstream and downstream interface.
@@ -62,45 +61,41 @@ import Data.Monoid (mempty,mappend)
 
     * @r @ - The return value
 -}
-data Proxy a' a b' b m r
-    = Request a' (a  -> Proxy a' a b' b m r )
-    | Respond b  (b' -> Proxy a' a b' b m r )
-    | M          (m    (Proxy a' a b' b m r))
-    | Pure    r
+data Proxy  : Type -> Type -> Type -> Type -> (Type -> Type) -> Type -> Type where
+    Request : a' -> (a  -> Proxy a' a b' b m r ) -> Proxy a' a b' b m r
+    Respond : b  -> (b' -> Proxy a' a b' b m r ) -> Proxy a' a b' b m r
+    M       : m (Proxy a' a b' b m r) -> Proxy a' a b' b m r
+    Pure    : r -> Proxy a' a b' b m r
 
-instance Monad m => Functor (Proxy a' a b' b m) where
-    fmap f p0 = go p0 where
-        go p = case p of
-            Request a' fa  -> Request a' (\a  -> go (fa  a ))
-            Respond b  fb' -> Respond b  (\b' -> go (fb' b'))
-            M          m   -> M (m >>= \p' -> return (go p'))
-            Pure    r      -> Pure (f r)
+instance (Monad m) => Functor (Proxy a' a b' b m) where
+     map : Functor f => (a -> b) -> f a -> f b
+     map f p0 = go p0 where
+         go : Functor f => f a -> f b
+         go p = case p of
+                 Request a' fa  => Request a' (\a  => go (fa  a ))
+                 Respond b  fb' => Respond b  (\b' => go (fb' b'))
+                 M          m   => M (m >>= \p' => return (go p'))
+                 Pure    r      => Pure (f r)
 
 instance Monad m => Applicative (Proxy a' a b' b m) where
     pure      = Pure
-    pf <*> px = go pf where
-        go p = case p of
-            Request a' fa  -> Request a' (\a  -> go (fa  a ))
-            Respond b  fb' -> Respond b  (\b' -> go (fb' b'))
-            M          m   -> M (m >>= \p' -> return (go p'))
-            Pure    f      -> fmap f px
-    (*>) = (>>)
+    p <$> px = (case p of
+                   Request a' fa  => Request a' (\a  => (fa  a ) <$> px)
+                   Respond b  fb' => Respond b  (\b' => (fb' b') <$> px)
+                   M          m   => M (m >>= \p' => pure (p' <$> px))
+                   Pure    f      => map f px
+               )
+
+partial
+bbind : Monad m => Proxy a' a b' b m r -> (r -> Proxy a' a b' b m r') -> Proxy a' a b' b m r'
+bbind p f = case p of
+                  Request a' fa  => Request a' (\a  => fa  a  `bbind` f)
+                  Respond b  fb' => Respond b  (\b' => fb' b' `bbind` f)
+                  M          m   => M (m >>= \p' => pure (p'  `bbind` f))
+                  Pure    r      => f r
 
 instance Monad m => Monad (Proxy a' a b' b m) where
-    return = Pure
-    (>>=)  = _bind
-
-_bind
-    :: Monad m
-    => Proxy a' a b' b m r
-    -> (r -> Proxy a' a b' b m r')
-    -> Proxy a' a b' b m r'
-p0 `_bind` f = go p0 where
-    go p = case p of
-        Request a' fa  -> Request a' (\a  -> go (fa  a ))
-        Respond b  fb' -> Respond b  (\b' -> go (fb' b'))
-        M          m   -> M (m >>= \p' -> return (go p'))
-        Pure    r      -> f r
+    (>>=)  = bbind
 
 {-# RULES
     "_bind (Request a' k) f" forall a' k f .
@@ -113,15 +108,20 @@ p0 `_bind` f = go p0 where
         _bind (Pure    r   ) f = f r;
   #-}
 
+{- todo define MonadTrans
 instance MonadTrans (Proxy a' a b' b) where
     lift m = M (m >>= \r -> return (Pure r))
+-}
+-- temp solution
+lift : Monad m => m r -> Proxy a' a b' b m r
+lift m = M (m >>= \r => return (Pure r))
 
+-- todo define hoist mmorph
 {-| 'unsafeHoist' is like 'hoist', but faster.
 
     This is labeled as unsafe because you will break the monad transformer laws
     if you do not pass a monad morphism as the first argument.  This function is
     safe if you pass a monad morphism as the first argument.
--}
 unsafeHoist
     :: Monad m
     => (forall x . m x -> n x) -> Proxy a' a b' b m r -> Proxy a' a b' b n r
@@ -132,8 +132,10 @@ unsafeHoist nat = go
         Respond b  fb' -> Respond b  (\b' -> go (fb' b'))
         M          m   -> M (nat (m >>= \p' -> return (go p')))
         Pure    r      -> Pure r
+-}
 {-# INLINABLE unsafeHoist #-}
 
+{-
 instance MFunctor (Proxy a' a b' b) where
     hoist nat p0 = go (observe p0)
       where
@@ -154,46 +156,54 @@ instance MMonad (Proxy a' a b' b) where
 
 instance MonadIO m => MonadIO (Proxy a' a b' b m) where
     liftIO m = M (liftIO (m >>= \r -> return (Pure r)))
+-}
 
 instance MonadReader r m => MonadReader r (Proxy a' a b' b m) where
     ask = lift ask
+    local : (r -> r) -> m a -> m a
     local f = go
         where
+          go : m a -> m a
           go p = case p of
-              Request a' fa  -> Request a' (\a  -> go (fa  a ))
-              Respond b  fb' -> Respond b  (\b' -> go (fb' b'))
-              Pure    r      -> Pure r
-              M       m      -> M (local f m >>= \r -> return (go r))
-    reader = lift . reader
+                     Request a' fa  => Request a' (\a  => go (fa  a ))
+                     Respond b  fb' => Respond b  (\b' => go (fb' b'))
+                     Pure    r      => Pure r
+                     M       m      => M (local f m >>= \r => return (go r))
+--    reader = lift . reader
 
 instance MonadState s m => MonadState s (Proxy a' a b' b m) where
     get = lift get
     put = lift . put
-    state = lift . state
+--    state = lift . state
 
 instance MonadWriter w m => MonadWriter w (Proxy a' a b' b m) where
-    writer = lift . writer
+--    writer = lift . writer
     tell = lift . tell
+    listen : m a -> m (a, w)
     listen p0 = go p0 mempty
       where
+        go : m a -> w -> m (a, w)
         go p w = case p of
-            Request a' fa  -> Request a' (\a  -> go (fa  a ) w)
-            Respond b  fb' -> Respond b  (\b' -> go (fb' b') w)
-            M       m      -> M (do
-                (p', w') <- listen m
-                return (go p' $! mappend w w') )
-            Pure    r      -> Pure (r, w)
+                  Request a' fa  => Request a' (\a  => go (fa  a ) w)
+                  Respond b  fb' => Respond b  (\b' => go (fb' b') w)
+                  M       m      => M (do
+                      (p', w') <- listen m
+                      return (go p' $ mappend w w') )
+                  Pure    r      => Pure (r, w)
 
+    pass   : m (a, w -> w) -> m a
     pass p0 = go p0 mempty
       where
+        go : m (a, w -> w) -> w -> ma
         go p w = case p of
-            Request a' fa  -> Request a' (\a  -> go (fa  a ) w)
-            Respond b  fb' -> Respond b  (\b' -> go (fb' b') w)
-            M       m      -> M (do
+            Request a' fa  => Request a' (\a  => go (fa  a ) w)
+            Respond b  fb' => Respond b  (\b' => go (fb' b') w)
+            M       m      => M (do
                 (p', w') <- listen m
-                return (go p' $! mappend w w') )
-            Pure   (r, f)  -> M (pass (return (Pure r, \_ -> f w)))
+                return (go p' $ mappend w w') )
+            Pure   (r, f)  => M (pass (return (Pure r, \_ => f w)))
 
+{-
 instance MonadError e m => MonadError e (Proxy a' a b' b m) where
     throwError = lift . throwError
     catchError p0 f = go p0
@@ -221,6 +231,7 @@ instance MonadPlus m => MonadPlus (Proxy a' a b' b m) where
             M          m   -> M ((do
                 p' <- m
                 return (go p') ) `mplus` return p1 )
+-}
 
 {-| The monad transformer laws are correct when viewed through the 'observe'
     function:
@@ -237,13 +248,13 @@ instance MonadPlus m => MonadPlus (Proxy a' a b' b m) where
     This function is a convenience for low-level @pipes@ implementers.  You do
     not need to use 'observe' if you stick to the safe API.
 -}
-observe :: Monad m => Proxy a' a b' b m r -> Proxy a' a b' b m r
+observe : Monad m => Proxy a' a b' b m r -> Proxy a' a b' b m r
 observe p0 = M (go p0) where
     go p = case p of
-        Request a' fa  -> return (Request a' (\a  -> observe (fa  a )))
-        Respond b  fb' -> return (Respond b  (\b' -> observe (fb' b')))
-        M          m'  -> m' >>= go
-        Pure    r      -> return (Pure r)
+        Request a' fa  => return (Request a' (\a  => observe (fa  a )))
+        Respond b  fb' => return (Respond b  (\b' => observe (fb' b')))
+        M          m'  => m' >>= go
+        Pure    r      => return (Pure r)
 {-# INLINABLE observe #-}
 
 {-| The empty type, used to close output ends
@@ -252,9 +263,9 @@ observe p0 = M (go p0) where
 
 > type X = Void
 -}
-newtype X = X X
+data X = MkX X
 
 -- | Use 'closed' to \"handle\" impossible outputs
-closed :: X -> a
-closed (X x) = closed x
+closed : X -> a
+closed (MkX x) = closed x
 {-# INLINABLE closed #-}
