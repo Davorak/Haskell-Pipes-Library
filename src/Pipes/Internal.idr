@@ -1,5 +1,5 @@
  
-module Internal
+module Pipes.Internal
 
 {-| This is an internal module, meaning that it is unsafe to import unless you
     understand the risks.

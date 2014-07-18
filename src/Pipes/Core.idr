@@ -1,9 +1,9 @@
 
-module Core 
+module Pipes.Core 
 
 -- import Pipes.Internal 
 -- (Proxy(..), X, closed)
-import Internal 
+import Pipes.Internal 
 -- (Proxy(..), X, closed)
 
 
@@ -829,6 +829,7 @@ p1 \<\ p2 = p2 />/ p1
 p1 /</ p2 = p2 \>\ p1
 {-# INLINABLE (/</) #-}
 
+{-
 -- | Equivalent to ('>~>') with the arguments flipped
 (<~<)
     : Monad m
@@ -840,7 +841,9 @@ p1 /</ p2 = p2 \>\ p1
     -- ^
 p1 <~< p2 = p2 >~> p1
 {-# INLINABLE (<~<) #-}
+-}
 
+{-
 -- | Equivalent to ('>+>') with the arguments flipped
 (<+<)
     : Monad m
@@ -852,6 +855,7 @@ p1 <~< p2 = p2 >~> p1
     -- ^
 p1 <+< p2 = p2 >+> p1
 {-# INLINABLE (<+<) #-}
+-}
 
 -- | Equivalent to ('//>') with the arguments flipped
 (<\\)
