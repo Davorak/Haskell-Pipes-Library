@@ -1,3 +1,6 @@
+ 
+module Internal
+
 {-| This is an internal module, meaning that it is unsafe to import unless you
     understand the risks.
 
@@ -26,7 +29,7 @@
   #-}
 -}
 
-module Pipes.Internal
+
 
 {-
 import Control.Applicative (
@@ -45,6 +48,8 @@ import Data.Monoid (mempty,mappend)
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.Reader
+
+%access public
 
 {-| A 'Proxy' is a monad transformer that receives and sends information on both
     an upstream and downstream interface.
@@ -67,15 +72,31 @@ data Proxy  : Type -> Type -> Type -> Type -> (Type -> Type) -> Type -> Type whe
     M       : m (Proxy a' a b' b m r) -> Proxy a' a b' b m r
     Pure    : r -> Proxy a' a b' b m r
 
+
 instance (Monad m) => Functor (Proxy a' a b' b m) where
-     map : Functor f => (a -> b) -> f a -> f b
-     map f p0 = go p0 where
-         go : Functor f => f a -> f b
+     map f p = case p of
+                        Request a' fa  => Request a' (\a  => map f (fa  a ))
+                        Respond b  fb' => Respond b  (\b' => map f (fb' b'))
+                        M          m   => M (m >>= \p' => return (map f p'))
+                        Pure    r      => Pure (f r)
+{-
+
+--     map : Functor f => (a -> b) -> f a -> f b
+--     map : Functor f => (a -> b) -> f a -> f b
+     map fn p0 = go p0 where
+--         go : Functor f => {fn : (a -> b)} -> f a -> f b
+{-
+         ft : (r'' -> r')
+         ft = f
+-}
+         go : Proxy a' a b' b m r -> Proxy a' a b' b m r'
          go p = case p of
-                 Request a' fa  => Request a' (\a  => go (fa  a ))
-                 Respond b  fb' => Respond b  (\b' => go (fb' b'))
-                 M          m   => M (m >>= \p' => return (go p'))
-                 Pure    r      => Pure (f r)
+--                 Request a' fa  =>  the (Proxy a' a b' b m r') $ Request a' (\a  => go (fa  a ))
+--                 Respond b  fb' => Respond b  (\b' => go (fb' b'))
+--                 M          m   => M (m >>= \p' => return (go p'))
+                 Pure    r      => the (Proxy a' a b' b m r') $ Pure (fn r)
+-}
+
 
 instance Monad m => Applicative (Proxy a' a b' b m) where
     pure      = Pure
@@ -85,6 +106,7 @@ instance Monad m => Applicative (Proxy a' a b' b m) where
                    M          m   => M (m >>= \p' => pure (p' <$> px))
                    Pure    f      => map f px
                )
+
 
 partial
 bbind : Monad m => Proxy a' a b' b m r -> (r -> Proxy a' a b' b m r') -> Proxy a' a b' b m r'
@@ -96,6 +118,7 @@ bbind p f = case p of
 
 instance Monad m => Monad (Proxy a' a b' b m) where
     (>>=)  = bbind
+
 
 {-# RULES
     "_bind (Request a' k) f" forall a' k f .
@@ -160,6 +183,14 @@ instance MonadIO m => MonadIO (Proxy a' a b' b m) where
 
 instance MonadReader r m => MonadReader r (Proxy a' a b' b m) where
     ask = lift ask
+    local f p = case p of
+                         Request a' fa  => Request a' (\a  => local f (fa  a ))
+                         Respond b  fb' => Respond b  (\b' => local f (fb' b'))
+                         Pure    r      => Pure r
+                         M       m      => M (local f m >>= \r => return (local f r))
+          
+
+{-
     local : (r -> r) -> m a -> m a
     local f = go
         where
@@ -170,15 +201,35 @@ instance MonadReader r m => MonadReader r (Proxy a' a b' b m) where
                      Pure    r      => Pure r
                      M       m      => M (local f m >>= \r => return (go r))
 --    reader = lift . reader
+-}
+
 
 instance MonadState s m => MonadState s (Proxy a' a b' b m) where
     get = lift get
     put = lift . put
 --    state = lift . state
 
+{-
 instance MonadWriter w m => MonadWriter w (Proxy a' a b' b m) where
 --    writer = lift . writer
     tell = lift . tell
+    listen p w = case p of
+                      Request a' fa  => Request a' (\a  =>  listen (fa  a ) w)
+                      Respond b  fb' => Respond b  (\b' => listen (fb' b') w)
+                      M       m      => M (do
+                                            (p', w') <- listen m
+                                            return (listen p' $ mappend w w') 
+                                          )
+                      Pure    r      => Pure (r, w)
+        
+    pass p w = case p of
+                  Request a' fa  => Request a' (\a  => pass (fa  a ) w)
+                  Respond b  fb' => Respond b  (\b' => pass (fb' b') w)
+                  M       m      => M (do
+                      (p', w') <- listen m
+                      return (pass p' $ mappend w w') )
+                  Pure   (r, f)  => M (pass (return (Pure r, \_ => f w)))
+        
     listen : m a -> m (a, w)
     listen p0 = go p0 mempty
       where
@@ -202,6 +253,8 @@ instance MonadWriter w m => MonadWriter w (Proxy a' a b' b m) where
                 (p', w') <- listen m
                 return (go p' $ mappend w w') )
             Pure   (r, f)  => M (pass (return (Pure r, \_ => f w)))
+-}
+
 
 {-
 instance MonadError e m => MonadError e (Proxy a' a b' b m) where
@@ -269,3 +322,4 @@ data X = MkX X
 closed : X -> a
 closed (MkX x) = closed x
 {-# INLINABLE closed #-}
+
