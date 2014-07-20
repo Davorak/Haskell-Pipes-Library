@@ -138,6 +138,7 @@ Effect = Proxy X () () X
 Producer : Type -> (Type -> Type) -> Type -> Type
 Producer a = Proxy X () () a
 
+
 -- | 'Pipe's can both 'Pipes.await' and 'Pipes.yield'
 -- type Pipe a b = Proxy () a () b
 Pipe : Type -> Type -> (Type -> Type) -> Type -> Type
@@ -175,26 +176,27 @@ Effect' = Proxy Type Type Type Type
 
 -- | Like 'Producer', but with a polymorphic type
 -- type Producer' b m r = forall x' x . Proxy x' x () b m r
-Producer' : Type -> (Type -> Type) -> Type -> Type
-Producer' a = Proxy Type Type () a
--- Producer' a = Proxy x' x () a
+-- Producer' : Type -> (Type -> Type) -> Type -> Type
+-- Producer' a = Proxy Type Type () a
+Producer' : {x' : Type} -> {x : Type} -> Type -> (Type -> Type) -> Type -> Type
+Producer' {x'} {x} a = Proxy x' x () a
 
 -- | Like 'Consumer', but with a polymorphic type
 -- type Consumer' a m r = forall y' y . Proxy () a y' y m r
-Consumer' : Type -> (Type -> Type) -> Type -> Type
-Consumer' a = Proxy () a Type Type
+Consumer' : {y' : Type} -> {y : Type} -> Type -> (Type -> Type) -> Type -> Type
+Consumer' {y'} {y} a = Proxy () a y' y
 -- Consumer' a = Proxy () a y' y
 
 -- | Like 'Server', but with a polymorphic type
 -- type Server' b' b m r = forall x' x . Proxy x' x b' b m r
-Server' : Type -> Type -> (Type -> Type) -> Type -> Type
-Server' b' b = Proxy Type Type b' b 
+Server' : {x' : Type} -> {x : Type} -> Type -> Type -> (Type -> Type) -> Type -> Type
+Server' {x'} {x} b' b = Proxy x' x b' b 
 -- Server' b' b = Proxy x' x a' a 
 
 -- | Like 'Client', but with a polymorphic type
 -- type Client' a' a m r = forall y' y . Proxy a' a y' y m r
-Client' : Type -> Type -> (Type -> Type) -> Type -> Type
-Client' a' a = Proxy a' a Type Type
+Client' : {y' : Type} -> {y : Type} -> Type -> Type -> (Type -> Type) -> Type -> Type
+Client' {y'} {y} a' a = Proxy a' a Type Type
 -- Client' a' a = Proxy a' a y' y
 
 -- | Run a self-contained 'Effect', converting it back to the base monad

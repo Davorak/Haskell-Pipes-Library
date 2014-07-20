@@ -136,7 +136,12 @@ f '~>' 'yield' = f
 @
 -}
 -- yield : Monad m => a -> Producer' a m ()
-yield : Monad m => a -> Producer a m () -- orgin, todo
+-- yield : Monad m => a -> Producer' {x'=_} {x=_} a m () -- orgin, todo
+-- yield : Monad m => a -> Producer' a m () -- orgin, todo
+-- yield = the ((a : Type) -> Producer' {x'=_} {x=_} a _ ()) respond
+-- todo:
+-- * fix typ sig
+yield : Monad m => a -> Producer' {x'} {x} a m ()
 yield = respond
 {-# INLINABLE yield #-}
 
@@ -250,7 +255,7 @@ f '>~' 'await' = f
 'await' :: 'Monad' m => 'Pipe' a y m a
 @
 -}
-await : Monad m => Consumer' a m a
+await : Monad m => Consumer' {y'} {y} a m a
 await = request ()
 {-# INLINABLE await #-}
 
@@ -480,8 +485,9 @@ next = go
 {-# INLINABLE next #-}
 
 -- | Convert a 'F.Foldable' to a 'Producer'
--- each : (Monad m, Foldable f) => f a -> Producer' a m () -- origen
-each : (Monad m, Foldable f) => f a -> Producer a m ()
+-- each : (Monad m, Foldable f) => f a -> Producer' a m () -- orign
+-- todo: * fix type sig
+each : (Monad m, Foldable f) => f a -> Producer' {x'} {x} a m ()
 each = foldr (\a, p => yield a >>= const p) (return ())
 {-# INLINABLE each #-}
 {-  The above code is the same as:

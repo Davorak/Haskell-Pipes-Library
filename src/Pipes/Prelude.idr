@@ -19,7 +19,8 @@
 {-# LANGUAGE RankNTypes, Trustworthy #-}
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 
-module Pipes.Prelude (
+module Pipes.Prelude 
+{-
     -- * Producers
     -- $producers
       stdinLn
@@ -132,6 +133,13 @@ import Prelude hiding (
     , zip
     , zipWith
     )
+-}
+
+import Pipes
+import Pipes.Core
+import Pipes.Internal
+import Control.Monad
+
 
 {- $producers
     Use 'for' loops to iterate over 'Producer's whenever you want to perform the
@@ -155,21 +163,22 @@ ABC
 {-| Read 'String's from 'IO.stdin' using 'getLine'
 
     Terminates on end of input
--}
-stdinLn :: MonadIO m => Producer' String m ()
+stdinLn : MonadIO m => Producer' String m ()
 stdinLn = fromHandle IO.stdin
 {-# INLINABLE stdinLn #-}
+-}
 
 -- | 'read' values from 'IO.stdin', ignoring failed parses
-readLn :: (MonadIO m, Read a) => Producer' a m ()
+{-
+readLn : (MonadIO m, Read a) => Producer' a m ()
 readLn = stdinLn >-> read
 {-# INLINABLE readLn #-}
+-}
 
 {-| Read 'String's from a 'IO.Handle' using 'IO.hGetLine'
 
     Terminates on end of input
--}
-fromHandle :: MonadIO m => IO.Handle -> Producer' String m ()
+fromHandle : MonadIO m => IO.Handle -> Producer' String m ()
 fromHandle h = go
   where
     go = do
@@ -179,9 +188,10 @@ fromHandle h = go
             yield str
             go
 {-# INLINABLE fromHandle #-}
+-}
 
 -- | Repeat a monadic action indefinitely, 'yield'ing each result
-repeatM :: Monad m => m a -> Producer' a m r
+repeatM : Monad m => m a -> Producer' a m r
 repeatM m = lift m >~ cat
 {-# INLINABLE repeatM #-}
 
@@ -189,13 +199,35 @@ repeatM m = lift m >~ cat
   "repeatM m >-> p" forall m p . repeatM m >-> p = lift m >~ p
   #-}
 
-{-| Repeat a monadic action a fixed number of times, 'yield'ing each result
+{-| @(take n)@ only allows @n@ values to pass through
 
+> take 0 = return ()
+>
+> take (m + n) = take m >> take n
+
+> take <infinity> = cat
+>
+> take (min m n) = take m >-> take n
+-}
+take : Monad m => Nat -> Pipe a a m ()
+{-
+take 0 = lift $ return ()
+take n = do
+    a <- await
+    yield a
+    take (n - 1)
+-}
+take n = replicateM_ n $ do
+    a <- await
+    yield a
+{-# INLINABLE take #-}
+
+{-| Repeat a monadic action a fixed number of times, 'yield'ing each result
 > replicateM  0      x = return ()
 >
 > replicateM (m + n) x = replicateM m x >> replicateM n x  -- 0 <= {m,n}
 -}
-replicateM :: Monad m => Int -> m a -> Producer' a m ()
+replicateM : Monad m => Nat -> m a -> Producer' a m ()
 replicateM n m = lift m >~ take n
 {-# INLINABLE replicateM #-}
 
@@ -214,8 +246,7 @@ ABC
 {-| Write 'String's to 'IO.stdout' using 'putStrLn'
 
     Unlike 'toHandle', 'stdoutLn' gracefully terminates on a broken output pipe
--}
-stdoutLn :: MonadIO m => Consumer' String m ()
+stdoutLn : MonadIO m => Consumer' String m ()
 stdoutLn = go
   where
     go = do
@@ -226,32 +257,37 @@ stdoutLn = go
                            , G.ioe_errno = Just ioe })
                 | Errno ioe == ePIPE
                     -> return ()
-           Left  e  -> liftIO (throwIO e)
-           Right () -> go
+           Left  e  => liftIO (throwIO e)
+           Right () => go
 {-# INLINABLE stdoutLn #-}
+-}
 
 -- | 'print' values to 'IO.stdout'
-print :: (MonadIO m, Show a) => Consumer' a m r
-print = for cat (\a -> liftIO (Prelude.print a))
+{-
+print : (MonadIO m, Show a) => Consumer' a m r
+print = for cat (\a => liftIO (Prelude.print a))
 {-# INLINABLE print #-}
+-}
 
 {-# RULES
     "p >-> print" forall p .
-        p >-> print = for p (\a -> liftIO (Prelude.print a))
-  #-}
+        p >-> print = for p (\a => liftIO (Prelude.print a))
+#-}
 
+{-
 -- | Write 'String's to a 'IO.Handle' using 'IO.hPutStrLn'
-toHandle :: MonadIO m => IO.Handle -> Consumer' String m r
+toHandle : MonadIO m => IO.Handle -> Consumer' String m r
 toHandle handle = for cat (\str -> liftIO (IO.hPutStrLn handle str))
 {-# INLINABLE toHandle #-}
+-}
 
 {-# RULES
     "p >-> toHandle handle" forall p handle .
-        p >-> toHandle handle = for p (\str -> liftIO (IO.hPutStrLn handle str))
+        p >-> toHandle handle = for p (\str => liftIO (IO.hPutStrLn handle str))
   #-}
 
 -- | 'discard' all incoming values
-drain :: Monad m => Consumer' a m r
+drain : Monad m => Consumer' a m r
 drain = for cat discard
 {-# INLINABLE drain #-}
 
@@ -279,8 +315,8 @@ quit<Enter>
 >
 > map (g . f) = map f >-> map g
 -}
-map :: Monad m => (a -> b) -> Pipe a b m r
-map f = for cat (\a -> yield (f a))
+map : Monad m => (a -> b) -> Pipe a b m r
+map f = for cat (\a => yield (f a))
 {-# INLINABLE map #-}
 
 {-# RULES
@@ -297,8 +333,8 @@ map f = for cat (\a -> yield (f a))
 >
 > mapM (f >=> g) = mapM f >-> mapM g
 -}
-mapM :: Monad m => (a -> m b) -> Pipe a b m r
-mapM f = for cat $ \a -> do
+mapM : Monad m => (a -> m b) -> Pipe a b m r
+mapM f = for cat $ \a => do
     b <- lift (f a)
     yield b
 {-# INLINABLE mapM #-}
@@ -315,15 +351,15 @@ mapM f = for cat $ \a -> do
   #-}
 
 -- | Convert a stream of actions to a stream of values
-sequence :: Monad m => Pipe (m a) a m r
+sequence : Monad m => Pipe (m a) a m r
 sequence = mapM id
 {-# INLINABLE sequence #-}
 
 {- | Apply a function to all values flowing downstream, and
      forward each element of the result.
 -}
-mapFoldable :: (Monad m, Foldable t) => (a -> t b) -> Pipe a b m r
-mapFoldable f = for cat (\a -> each (f a))
+mapFoldable : (Monad m, Foldable t) => (a -> t b) -> Pipe a b m r
+mapFoldable f = for cat (\a => each (f a))
 {-# INLINABLE mapFoldable #-}
 
 {-# RULES
@@ -337,8 +373,8 @@ mapFoldable f = for cat (\a -> each (f a))
 >
 > filter (liftA2 (&&) p1 p2) = filter p1 >-> filter p2
 -}
-filter :: Monad m => (a -> Bool) -> Pipe a a m r
-filter predicate = for cat $ \a -> when (predicate a) (yield a)
+filter : Monad m => (a -> Bool) -> Pipe a a m r
+filter predicate = for cat $ \a => when (predicate a) (yield a)
 {-# INLINABLE filter #-}
 
 {-# RULES
@@ -353,8 +389,8 @@ filter predicate = for cat $ \a -> when (predicate a) (yield a)
 >
 > filterM (liftA2 (liftA2 (&&)) p1 p2) = filterM p1 >-> filterM p2
 -}
-filterM :: Monad m => (a -> m Bool) -> Pipe a a m r
-filterM predicate = for cat $ \a -> do
+filterM : Monad m => (a -> m Bool) -> Pipe a a m r
+filterM predicate = for cat $ \a => do
     b <- lift (predicate a)
     when b (yield a)
 {-# INLINABLE filterM #-}
@@ -366,21 +402,6 @@ filterM predicate = for cat $ \a -> do
             when b (yield a) )
   #-}
 
-{-| @(take n)@ only allows @n@ values to pass through
-
-> take 0 = return ()
->
-> take (m + n) = take m >> take n
-
-> take <infinity> = cat
->
-> take (min m n) = take m >-> take n
--}
-take :: Monad m => Int -> Pipe a a m ()
-take n = replicateM_ n $ do
-    a <- await
-    yield a
-{-# INLINABLE take #-}
 
 {-| @(takeWhile p)@ allows values to pass downstream so long as they satisfy
     the predicate @p@.
@@ -389,7 +410,7 @@ take n = replicateM_ n $ do
 >
 > takeWhile (liftA2 (&&) p1 p2) = takeWhile p1 >-> takeWhile p2
 -}
-takeWhile :: Monad m => (a -> Bool) -> Pipe a a m ()
+takeWhile : Monad m => (a -> Bool) -> Pipe a a m ()
 takeWhile predicate = go
   where
     go = do
@@ -407,7 +428,7 @@ takeWhile predicate = go
 >
 > drop (m + n) = drop m >-> drop n
 -}
-drop :: Monad m => Int -> Pipe a a m r
+drop : Monad m => Nat -> Pipe a a m r
 drop n = do
     replicateM_ n await
     cat
@@ -420,7 +441,7 @@ drop n = do
 >
 > dropWhile (liftA2 (||) p1 p2) = dropWhile p1 >-> dropWhile p2
 -}
-dropWhile :: Monad m => (a -> Bool) -> Pipe a a m r
+dropWhile : Monad m => (a -> Bool) -> Pipe a a m r
 dropWhile predicate = go
   where
     go = do
@@ -433,7 +454,7 @@ dropWhile predicate = go
 {-# INLINABLE dropWhile #-}
 
 -- | Flatten all 'Foldable' elements flowing downstream
-concat :: (Monad m, Foldable f) => Pipe (f a) a m r
+concat : (Monad m, Foldable f) => Pipe (f a) a m r
 concat = for cat each
 {-# INLINABLE concat #-}
 
@@ -441,40 +462,40 @@ concat = for cat each
     "p >-> concat" forall p . p >-> concat = for p each
   #-}
 
--- | Outputs the indices of all elements that match the given element
-elemIndices :: (Monad m, Eq a) => a -> Pipe a Int m r
-elemIndices a = findIndices (a ==)
-{-# INLINABLE elemIndices #-}
-
 -- | Outputs the indices of all elements that satisfied the predicate
-findIndices :: Monad m => (a -> Bool) -> Pipe a Int m r
-findIndices predicate = loop 0
+findIndices : Monad m => (a -> Bool) -> Pipe a Int m r
+findIndices predicate = loop (the Int 0)
   where
     loop n = do
         a <- await
         when (predicate a) (yield n)
-        loop $! n + 1
+        loop $ n + 1
 {-# INLINABLE findIndices #-}
+
+-- | Outputs the indices of all elements that match the given element
+elemIndices : (Monad m, Eq a) => a -> Pipe a Int m r
+elemIndices a = findIndices (a ==)
+{-# INLINABLE elemIndices #-}
 
 {-| Strict left scan
 
-> Control.Foldl.purely scan :: Monad m => Fold a b -> Pipe a b m r
+> Control.Foldl.purely scan : Monad m => Fold a b -> Pipe a b m r
 -}
-scan :: Monad m => (x -> a -> x) -> x -> (x -> b) -> Pipe a b m r
+scan : Monad m => (x -> a -> x) -> x -> (x -> b) -> Pipe a b m r
 scan step begin done = loop begin
   where
     loop x = do
         yield (done x)
         a <- await
         let x' = step x a
-        loop $! x'
+        loop $ x'
 {-# INLINABLE scan #-}
 
 {-| Strict, monadic left scan
 
-> Control.Foldl.impurely scan :: Monad m => FoldM a m b -> Pipe a b m r
+> Control.Foldl.impurely scan : Monad m => FoldM a m b -> Pipe a b m r
 -}
-scanM :: Monad m => (x -> a -> m x) -> m x -> (x -> m b) -> Pipe a b m r
+scanM : Monad m => (x -> a -> m x) -> m x -> (x -> m b) -> Pipe a b m r
 scanM step begin done = do
     x <- lift begin
     loop x
@@ -484,7 +505,7 @@ scanM step begin done = do
         yield b
         a  <- await
         x' <- lift (step x a)
-        loop $! x'
+        loop $ x'
 {-# INLINABLE scanM #-}
 
 {-| Apply an action to all values flowing downstream
@@ -493,15 +514,15 @@ scanM step begin done = do
 >
 > chain (liftA2 (>>) m1 m2) = chain m1 >-> chain m2
 -}
-chain :: Monad m => (a -> m ()) -> Pipe a a m r
-chain f = for cat $ \a -> do
+chain : Monad m => (a -> m ()) -> Pipe a a m r
+chain f = for cat $ \a => do
     lift (f a)
     yield a
 {-# INLINABLE chain #-}
 
 {-# RULES
     "p >-> chain f" forall p f .
-        p >-> chain f = for p (\a -> do
+        p >-> chain f = for p (\a => do
             lift (f a)
             yield a )
   ; "chain f >-> p" forall p f .
@@ -511,12 +532,14 @@ chain f = for cat $ \a -> do
             return a ) >~ p
   #-}
 
+{-
 -- | Parse 'Read'able values, only forwarding the value if the parse succeeds
-read :: (Monad m, Read a) => Pipe String a m r
-read = for cat $ \str -> case (reads str) of
-    [(a, "")] -> yield a
-    _         -> return ()
+read : (Monad m, Read a) => Pipe String a m r
+read = for cat $ \str => case (reads str) of
+    [(a, "")] => yield a
+    _         => return ()
 {-# INLINABLE read #-}
+-}
 
 {-# RULES
     "p >-> read" forall p .
@@ -526,7 +549,7 @@ read = for cat $ \str -> case (reads str) of
   #-}
 
 -- | Convert 'Show'able values to 'String's
-show :: (Monad m, Show a) => Pipe a String m r
+show : (Monad m, Show a) => Pipe a String m r
 show = map Prelude.show
 {-# INLINABLE show #-}
 
@@ -545,168 +568,190 @@ True
 
 {-| Strict fold of the elements of a 'Producer'
 
-> Control.Foldl.purely fold :: Monad m => Fold a b -> Producer a m () -> m b
+> Control.Foldl.purely fold : Monad m => Fold a b -> Producer a m () -> m b
 -}
-fold :: Monad m => (x -> a -> x) -> x -> (x -> b) -> Producer a m () -> m b
+fold : Monad m => (x -> a -> x) -> x -> (x -> b) -> Producer a m () -> m b
 fold step begin done p0 = loop p0 begin
   where
     loop p x = case p of
-        Request v  _  -> closed v
-        Respond a  fu -> loop (fu ()) $! step x a
-        M          m  -> m >>= \p' -> loop p' x
-        Pure    _     -> return (done x)
+        Request v  _  => closed v
+        Respond a  fu => loop (fu ()) $ step x a
+        M          m  => m >>= \p' => loop p' x
+        Pure    _     => return (done x)
 {-# INLINABLE fold #-}
 
 {-| Strict, monadic fold of the elements of a 'Producer'
 
-> Control.Foldl.impurely foldM :: Monad m => FoldM a b -> Producer a m () -> m b
+> Control.Foldl.impurely foldM : Monad m => FoldM a b -> Producer a m () -> m b
 -}
 foldM
-    :: Monad m
+    : Monad m
     => (x -> a -> m x) -> m x -> (x -> m b) -> Producer a m () -> m b
 foldM step begin done p0 = do
     x0 <- begin
     loop p0 x0
   where
     loop p x = case p of
-        Request v  _  -> closed v
-        Respond a  fu -> do
+        Request v  _  => closed v
+        Respond a  fu => do
             x' <- step x a
-            loop (fu ()) $! x'
-        M          m  -> m >>= \p' -> loop p' x
-        Pure    _     -> done x
+            loop (fu ()) $ x'
+        M          m  => m >>= \p' => loop p' x
+        Pure    _     => done x
 {-# INLINABLE foldM #-}
+
+-- | Determine if a 'Producer' is empty
+null : Monad m => Producer a m () -> m Bool
+null p = do
+    x <- next p
+    return $ case x of
+        Left  => True
+        Right => False
+{-# INLINABLE null #-}
 
 {-| @(all predicate p)@ determines whether all the elements of @p@ satisfy the
     predicate.
 -}
-all :: Monad m => (a -> Bool) -> Producer a m () -> m Bool
-all predicate p = null $ p >-> filter (\a -> not (predicate a))
+all : Monad m => (a -> Bool) -> Producer a m () -> m Bool
+all predicate p = null $ p >-> filter (\a => not (predicate a))
 {-# INLINABLE all #-}
 
 {-| @(any predicate p)@ determines whether any element of @p@ satisfies the
-    predicate.
--}
-any :: Monad m => (a -> Bool) -> Producer a m () -> m Bool
+  predicate.
+    -}
+any : Monad m => (a -> Bool) -> Producer a m () -> m Bool
 any predicate p = liftM not $ null (p >-> filter predicate)
 {-# INLINABLE any #-}
 
 -- | Determines whether all elements are 'True'
-and :: Monad m => Producer Bool m () -> m Bool
+and : Monad m => Producer Bool m () -> m Bool
 and = all id
 {-# INLINABLE and #-}
 
 -- | Determines whether any element is 'True'
-or :: Monad m => Producer Bool m () -> m Bool
+or : Monad m => Producer Bool m () -> m Bool
 or = any id
 {-# INLINABLE or #-}
 
 {-| @(elem a p)@ returns 'True' if @p@ has an element equal to @a@, 'False'
-    otherwise
+  otherwise
 -}
-elem :: (Monad m, Eq a) => a -> Producer a m () -> m Bool
+elem : (Monad m, Eq a) => a -> Producer a m () -> m Bool
 elem a = any (a ==)
 {-# INLINABLE elem #-}
 
 {-| @(notElem a)@ returns 'False' if @p@ has an element equal to @a@, 'True'
-    otherwise
+  otherwise
 -}
-notElem :: (Monad m, Eq a) => a -> Producer a m () -> m Bool
+notElem : (Monad m, Eq a) => a -> Producer a m () -> m Bool
 notElem a = all (a /=)
 {-# INLINABLE notElem #-}
 
+-- | Retrieve the first element from a 'Producer'
+head : Monad m => Producer a m () -> m (Maybe a)
+head p = do
+  x <- next p
+  return $ case x of
+    Left   _     => Nothing
+    Right (a, _) => Just a
+{-# INLINABLE head #-}
+
+-- | Retrieve the first element from a 'Producer'
+headP : Monad m => Producer a m () -> m (Maybe a)
+headP p = do
+  x <- next p
+  return $ case x of
+    Left   _     => Nothing
+    Right (a, _) => Just a
+{-# INLINABLE head #-}
+
 -- | Find the first element of a 'Producer' that satisfies the predicate
-find :: Monad m => (a -> Bool) -> Producer a m () -> m (Maybe a)
+find : Monad m => (a -> Bool) -> Producer a m () -> m (Maybe a)
 find predicate p = head (p >-> filter predicate)
 {-# INLINABLE find #-}
 
 {-| Find the index of the first element of a 'Producer' that satisfies the
-    predicate
+  predicate
 -}
-findIndex :: Monad m => (a -> Bool) -> Producer a m () -> m (Maybe Int)
-findIndex predicate p = head (p >-> findIndices predicate)
+findIndex : Monad m => (a -> Bool) -> Producer a m () -> m (Maybe Int)
+findIndex predicate p = headP (p >-> findIndices predicate)
 {-# INLINABLE findIndex #-}
 
--- | Retrieve the first element from a 'Producer'
-head :: Monad m => Producer a m () -> m (Maybe a)
-head p = do
-    x <- next p
-    return $ case x of
-        Left   _     -> Nothing
-        Right (a, _) -> Just a
-{-# INLINABLE head #-}
 
 -- | Index into a 'Producer'
-index :: Monad m => Int -> Producer a m () -> m (Maybe a)
+index : Monad m => Nat -> Producer a m () -> m (Maybe a)
 index n p = head (p >-> drop n)
 {-# INLINABLE index #-}
 
 -- | Retrieve the last element from a 'Producer'
-last :: Monad m => Producer a m () -> m (Maybe a)
+{- todo: finish after fixing worker wrapper issue
+last : Monad m => Producer a m () -> m (Maybe a)
 last p0 = do
-    x <- next p0
+  x <- next p0
+  case x of
+    Left   _      => return Nothing
+    Right (a, p') => loop a p'
+ where
+  loop a p = do
+    x <- next p
     case x of
-        Left   _      -> return Nothing
-        Right (a, p') -> loop a p'
-  where
-    loop a p = do
-        x <- next p
-        case x of
-            Left   _       -> return (Just a)
-            Right (a', p') -> loop a' p'
+        Left   _       => return (Just a)
+        Right (a', p') => loop a' p'
 {-# INLINABLE last #-}
+-}
 
 -- | Count the number of elements in a 'Producer'
-length :: Monad m => Producer a m () -> m Int
-length = fold (\n _ -> n + 1) 0 id
+length : Monad m => Producer a m () -> m Int
+length = fold (\n, _ => n + 1) 0 id
 {-# INLINABLE length #-}
 
 -- | Find the maximum element of a 'Producer'
-maximum :: (Monad m, Ord a) => Producer a m () -> m (Maybe a)
+maximum : (Monad m, Ord a) => Producer a m () -> m (Maybe a)
 maximum = fold step Nothing id
   where
     step x a = Just $ case x of
-        Nothing -> a
-        Just a' -> max a a'
+        Nothing => a
+        Just a' => max a a'
 {-# INLINABLE maximum #-}
 
 -- | Find the minimum element of a 'Producer'
-minimum :: (Monad m, Ord a) => Producer a m () -> m (Maybe a)
+minimum : (Monad m, Ord a) => Producer a m () -> m (Maybe a)
 minimum = fold step Nothing id
   where
     step x a = Just $ case x of
-        Nothing -> a
-        Just a' -> min a a'
+        Nothing => a
+        Just a' => min a a'
 {-# INLINABLE minimum #-}
 
--- | Determine if a 'Producer' is empty
-null :: Monad m => Producer a m () -> m Bool
-null p = do
-    x <- next p
-    return $ case x of
-        Left  _ -> True
-        Right _ -> False
-{-# INLINABLE null #-}
 
 -- | Compute the sum of the elements of a 'Producer'
-sum :: (Monad m, Num a) => Producer a m () -> m a
+sum : (Monad m, Num a) => Producer a m () -> m a
 sum = fold (+) 0 id
 {-# INLINABLE sum #-}
 
 -- | Compute the product of the elements of a 'Producer'
-product :: (Monad m, Num a) => Producer a m () -> m a
+product : (Monad m, Num a) => Producer a m () -> m a
 product = fold (*) 1 id
 {-# INLINABLE product #-}
 
 -- | Convert a pure 'Producer' into a list
-toList :: Producer a Identity () -> [a]
+toList : Producer a Identity () -> List a
+toList p = case p of    
+                   Request v _  => closed v
+                   Respond a fu => a:: toList (fu ())
+                   M         m  => toList (runIdentity m)
+                   Pure    _    => []
+    
+    
+{-
 toList = loop
   where
     loop p = case p of
-        Request v _  -> closed v
-        Respond a fu -> a:loop (fu ())
-        M         m  -> loop (runIdentity m)
-        Pure    _    -> []
+              Request v _  => closed v
+              Respond a fu => a::loop (fu ())
+              M         m  => loop (runIdentity m)
+              Pure    _    => []
+-}
 {-# INLINABLE toList #-}
 
 {-| Convert an effectful 'Producer' into a list
@@ -716,20 +761,31 @@ toList = loop
     immediately as they are generated instead of loading all elements into
     memory.
 -}
-toListM :: Monad m => Producer a m () -> m [a]
+toListM : Monad m => Producer a m () -> m (List a)
+toListM p = case p of 
+                      Request v _  => closed v
+                      Respond a fu => do
+                          as <- toListM (fu ())
+                          return (a::as)
+                      M         m  => m >>= toListM
+                      Pure    _    => return []
+    
+{-
 toListM = loop
   where
     loop p = case p of
-        Request v _  -> closed v
-        Respond a fu -> do
-            as <- loop (fu ())
-            return (a:as)
-        M         m  -> m >>= loop
-        Pure    _    -> return []
+                Request v _  => closed v
+                Respond a fu => do
+                    as <- loop (fu ())
+                    return (a::as)
+                M         m  => m >>= loop
+                Pure    _    => return []
+-}
 {-# INLINABLE toListM #-}
 
+{-
 -- | Zip two 'Producer's
-zip :: Monad m
+zip : Monad m
     => (Producer   a     m r)
     -> (Producer      b  m r)
     -> (Producer' (a, b) m r)
@@ -737,7 +793,7 @@ zip = zipWith (,)
 {-# INLINABLE zip #-}
 
 -- | Zip two 'Producer's using the provided combining function
-zipWith :: Monad m
+zipWith : Monad m
     => (a -> b -> c)
     -> (Producer  a m r)
     -> (Producer  b m r)
@@ -747,38 +803,41 @@ zipWith f = go
     go p1 p2 = do
         e1 <- lift $ next p1
         case e1 of
-            Left r         -> return r
-            Right (a, p1') -> do
+            Left r         => return r
+            Right (a, p1') => do
                 e2 <- lift $ next p2
                 case e2 of
-                    Left r         -> return r
-                    Right (b, p2') -> do
+                    Left r         => return r
+                    Right (b, p2') => do
                         yield (f a b)
                         go p1' p2'
 {-# INLINABLE zipWith #-}
+-}
 
 {-| Transform a 'Consumer' to a 'Pipe' that reforwards all values further
     downstream
 -}
-tee :: Monad m => Consumer a m r -> Pipe a a m r
+{- todo after finsh Pipes.Lift
+tee : Monad m => Consumer a m r -> Pipe a a m r
 tee p = evalStateP Nothing $ do
     r <- up >\\ (hoist lift p //> dn)
     ma <- lift get
     case ma of
-        Nothing -> return ()
-        Just a  -> yield a
+        Nothing => return ()
+        Just a  => yield a
     return r
   where
     up () = do
         ma <- lift get
         case ma of
-            Nothing -> return ()
-            Just a  -> yield a
+            Nothing => return ()
+            Just a  => yield a
         a <- await
         lift $ put (Just a)
         return a
     dn v = closed v
 {-# INLINABLE tee #-}
+-}
 
 {-| Transform a unidirectional 'Pipe' to a bidirectional 'Proxy'
 
@@ -786,7 +845,8 @@ tee p = evalStateP Nothing $ do
 >
 > generalize cat = pull
 -}
-generalize :: Monad m => Pipe a b m r -> x -> Proxy x a x b m r
+{- todo after finishing Pipes.Lift
+generalize : Monad m => Pipe a b m r -> x -> Proxy x a x b m r
 generalize p x0 = evalStateP x0 $ up >\\ hoist lift p //> dn
   where
     up () = do
@@ -796,3 +856,4 @@ generalize p x0 = evalStateP x0 $ up >\\ hoist lift p //> dn
         x <- respond a
         lift $ put x
 {-# INLINABLE generalize #-}
+-}
