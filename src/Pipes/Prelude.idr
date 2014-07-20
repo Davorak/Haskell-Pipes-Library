@@ -140,6 +140,27 @@ import Pipes.Core
 import Pipes.Internal
 import Control.Monad
 
+namespace IO
+
+  
+  hIsEOF : File -> IO Bool
+  hIsEOF = feof
+
+  partial
+  hGetLine : File -> IO String
+--  hGetLine (File h) = prim_fread h
+  hGetLine h = fread h
+
+  hPutStr : File -> String -> IO ()
+  hPutStr h s = fwrite h s
+
+  hPutStrLn : File -> String -> IO ()
+  hPutStrLn h s = hPutStr h (s ++ "\n")
+
+  Handle : Type
+  Handle = File
+  stdin : Handle
+  stdin = Prelude.stdin
 
 {- $producers
     Use 'for' loops to iterate over 'Producer's whenever you want to perform the
@@ -160,25 +181,24 @@ ABC
 
 -}
 
-{-| Read 'String's from 'IO.stdin' using 'getLine'
-
-    Terminates on end of input
-stdinLn : MonadIO m => Producer' String m ()
-stdinLn = fromHandle IO.stdin
-{-# INLINABLE stdinLn #-}
--}
-
--- | 'read' values from 'IO.stdin', ignoring failed parses
-{-
-readLn : (MonadIO m, Read a) => Producer' a m ()
-readLn = stdinLn >-> read
-{-# INLINABLE readLn #-}
--}
+liftIO : Monad m => m r -> Proxy a' a b' b m r
+liftIO = lift
 
 {-| Read 'String's from a 'IO.Handle' using 'IO.hGetLine'
 
     Terminates on end of input
-fromHandle : MonadIO m => IO.Handle -> Producer' String m ()
+-}
+-- todo fix after MonadIO is added
+-- fromHandle : MonadIO m => IO.Handle -> Producer' String m ()
+fromHandle : IO.Handle -> Producer' String IO ()
+fromHandle h = do
+                   eof <- liftIO $ IO.hIsEOF h
+                   unless eof $ do
+                       str <- liftIO $ IO.hGetLine h
+                       yield str
+                       fromHandle h
+    
+{-
 fromHandle h = go
   where
     go = do
@@ -187,8 +207,26 @@ fromHandle h = go
             str <- liftIO $ IO.hGetLine h
             yield str
             go
-{-# INLINABLE fromHandle #-}
 -}
+{-# INLINABLE fromHandle #-}
+
+{-| Read 'String's from 'IO.stdin' using 'getLine'
+
+    Terminates on end of input
+-}
+-- todo fix after MonadIO is added
+-- stdinLn : MonadIO m => Producer' String m ()
+stdinLn : Producer' String IO ()
+stdinLn = fromHandle IO.stdin
+{-# INLINABLE stdinLn #-}
+
+-- | 'read' values from 'IO.stdin', ignoring failed parses
+{-
+readLn : (MonadIO m, Read a) => Producer' a m ()
+readLn = stdinLn >-> read
+{-# INLINABLE readLn #-}
+-}
+
 
 -- | Repeat a monadic action indefinitely, 'yield'ing each result
 repeatM : Monad m => m a -> Producer' a m r
@@ -246,7 +284,17 @@ ABC
 {-| Write 'String's to 'IO.stdout' using 'putStrLn'
 
     Unlike 'toHandle', 'stdoutLn' gracefully terminates on a broken output pipe
-stdoutLn : MonadIO m => Consumer' String m ()
+-}
+-- todo fix monadIO
+-- stdoutLn : MonadIO m => Consumer' String m ()
+stdoutLn : Consumer' String IO ()
+stdoutLn = do
+               str <- await
+--               x   <- liftIO $ try (putStrLn str)
+               x   <- liftIO $ putStrLn str
+               stdoutLn
+    
+{-
 stdoutLn = go
   where
     go = do
@@ -259,8 +307,8 @@ stdoutLn = go
                     -> return ()
            Left  e  => liftIO (throwIO e)
            Right () => go
-{-# INLINABLE stdoutLn #-}
 -}
+{-# INLINABLE stdoutLn #-}
 
 -- | 'print' values to 'IO.stdout'
 {-
