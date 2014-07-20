@@ -99,13 +99,12 @@ instance (Monad m) => Functor (Proxy a' a b' b m) where
 
 
 instance Monad m => Applicative (Proxy a' a b' b m) where
-    pure      = Pure
-    p <$> px = (case p of
+    pure     = Pure
+    p <$> px = case p of
                    Request a' fa  => Request a' (\a  => (fa  a ) <$> px)
                    Respond b  fb' => Respond b  (\b' => (fb' b') <$> px)
                    M          m   => M (m >>= \p' => pure (p' <$> px))
                    Pure    f      => map f px
-               )
 
 
 partial
