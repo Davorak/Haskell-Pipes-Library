@@ -15,3 +15,6 @@ replicateM_ n x   = sequence_ $ the (List _) (replicate n x)
 -- | Promote a function to a monad.
 liftM   : (Monad m) => (a1 -> r) -> m a1 -> m r
 liftM f m1              = do { x1 <- m1; return (f x1) }
+
+unless            : (Monad m) => Bool -> m () -> m ()
+unless p s        =  if p then return () else s
